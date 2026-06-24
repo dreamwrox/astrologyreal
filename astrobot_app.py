@@ -14,6 +14,7 @@ Deploy: push to GitHub -> share.streamlit.io -> add ANTHROPIC_API_KEY in app sec
 import os
 import datetime
 import streamlit as st
+import streamlit.components.v1 as components
 import anthropic
 
 # ---------------- config ----------------
@@ -22,6 +23,16 @@ RECHARGE_MIN = 100
 COUPONS = {"ASTRO100": 100, "STARS100": 100, "COSMIC200": 200}
 ZODIAC = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
           "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
+
+# Voice + reading languages. Each: display label -> (speech BCP-47 code, language name for Claude)
+LANGUAGES = {
+    "English":  ("en-IN", "English"),
+    "हिन्दी (Hindi)":    ("hi-IN", "Hindi"),
+    "ਪੰਜਾਬੀ (Punjabi)":  ("pa-IN", "Punjabi"),
+    "বাংলা (Bangla)":    ("bn-IN", "Bengali"),
+    "தமிழ் (Tamil)":     ("ta-IN", "Tamil"),
+    "ಕನ್ನಡ (Kannada)":   ("kn-IN", "Kannada"),
+}
 
 
 # ---------------- zodiac sign detection ----------------
@@ -66,6 +77,66 @@ def detect_sign(d, t=None, place=None):
     return w, "Western"
 
 
+# ---------------- voice assistant (browser Web Speech API) ----------------
+def speak_html(text, lang_code="en-IN"):
+    """Speak the given text aloud using the browser's speech synthesis in the chosen language."""
+    return f"""
+    <script>
+      (function() {{
+        try {{
+          const msg = new SpeechSynthesisUtterance("{text}");
+          msg.rate = 1.0; msg.pitch = 1.0; msg.lang = "{lang_code}";
+          // Prefer a voice matching the language if the browser has one.
+          const pick = () => {{
+            const vs = window.speechSynthesis.getVoices();
+            const m = vs.find(v => v.lang === "{lang_code}") || vs.find(v => v.lang && v.lang.slice(0,2) === "{lang_code}".slice(0,2));
+            if (m) msg.voice = m;
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(msg);
+          }};
+          if (window.speechSynthesis.getVoices().length) pick();
+          else window.speechSynthesis.onvoiceschanged = pick;
+        }} catch (e) {{}}
+      }})();
+    </script>
+    """
+
+# Microphone capture in the chosen language; shows recognized text to copy into chat.
+def voice_input_html(lang_code="en-IN"):
+    return """
+<div style="font-family: system-ui, sans-serif;">
+  <button id="mic" style="background:#6D28D9;color:#fff;border:none;border-radius:10px;
+    padding:10px 16px;font-weight:600;cursor:pointer;">\U0001F3A4 Start speaking</button>
+  <p id="out" style="color:#EDE9FE;margin-top:10px;min-height:20px;"></p>
+  <script>
+    (function(){
+      const LANG = "%LANG%";
+      const btn = document.getElementById('mic');
+      const out = document.getElementById('out');
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { out.textContent = "Voice input not supported in this browser. Try Chrome."; btn.disabled = true; return; }
+      const rec = new SR();
+      rec.lang = LANG; rec.interimResults = true; rec.continuous = false;
+      let finalText = "";
+      btn.onclick = function(){
+        finalText = ""; out.textContent = "Listening\\u2026";
+        try { rec.start(); } catch(e) {}
+      };
+      rec.onresult = function(e){
+        let interim = "";
+        for (let i = e.resultIndex; i < e.results.length; i++){
+          const t = e.results[i][0].transcript;
+          if (e.results[i].isFinal) finalText += t; else interim += t;
+        }
+        out.textContent = (finalText + " " + interim).trim();
+      };
+      rec.onerror = function(){ out.textContent = "Didn't catch that \\u2014 try again."; };
+    })();
+  </script>
+</div>
+""".replace("%LANG%", lang_code)
+
+
 st.set_page_config(page_title="AstroBot", page_icon="\u2728", layout="centered")
 
 # ---------------- BNN knowledge base ----------------
@@ -103,6 +174,8 @@ def init_state():
         "birth": {"name": "", "date": None, "time": "", "place": "", "sign": "Aries"},
         "messages": [],
         "horoscope": "",
+        "voice_on": True,         # read bot answers aloud
+        "language": "English",    # voice + reading language
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -189,7 +262,9 @@ def reading_system():
         "sits in), briefly ask for the key ones relevant to their question, OR give an "
         "indicative reading based on what they've shared and say so. Keep answers to 4-6 warm "
         "sentences. Never declare extreme events (divorce, serious illness) as certain — note "
-        "that one combination is not the whole chart. Frame everything as BNN guidance."
+        "that one combination is not the whole chart. Frame everything as BNN guidance. "
+        f"IMPORTANT: Write your entire reply in {LANGUAGES[st.session_state.language][1]}. "
+        "Use natural, conversational phrasing in that language."
     )
 
 # ---------------- header ----------------
@@ -212,7 +287,7 @@ if not st.session_state.unlocked:
         st.subheader("Enter your coupon to begin")
         st.caption(
             f"AstroBot is coupon-based. Redeem a code (min \u20B9{RECHARGE_MIN}) to unlock. "
-            f"Each question then costs \u20B9{COST_PER_Q}. Demo code: ASTRO100"
+            f"Each question then costs \u20B9{COST_PER_Q}."
         )
         g1, g2 = st.columns([3, 1])
         gate_code = g1.text_input(
@@ -227,7 +302,7 @@ if not st.session_state.unlocked:
                 st.session_state.unlocked = True
                 st.rerun()
             else:
-                st.error("That coupon isn't valid. Try ASTRO100.")
+                st.error("That coupon code isn't valid.")
     st.markdown(
         "<p class='foot'>Guidance is based on Vedic/BNN principles and is for reflection, not certainty.</p>",
         unsafe_allow_html=True,
@@ -237,7 +312,7 @@ if not st.session_state.unlocked:
 # ---------------- recharge (coupon only) ----------------
 with st.container(border=True):
     st.subheader("Recharge wallet")
-    st.caption(f"Min \u20B9{RECHARGE_MIN} via coupon. Each question costs \u20B9{COST_PER_Q}. Demo code: ASTRO100")
+    st.caption(f"Min \u20B9{RECHARGE_MIN} via coupon. Each question costs \u20B9{COST_PER_Q}.")
     c1, c2 = st.columns([3, 1])
     code = c1.text_input("Coupon code", label_visibility="collapsed", placeholder="Enter coupon code")
     if c2.button("Redeem", use_container_width=True):
@@ -249,7 +324,7 @@ with st.container(border=True):
             st.session_state.redeemed.add(c)
             st.success(f"Added \u20B9{COUPONS[c]} to your wallet.")
         else:
-            st.error("That coupon isn't valid. Try ASTRO100.")
+            st.error("That coupon code isn't valid.")
 
 # ---------------- profile ----------------
 if not st.session_state.profile_set:
@@ -294,7 +369,8 @@ if st.session_state.profile_set:
         if hc2.button("Reveal (free)", use_container_width=True):
             sys = (f"You are AstroBot. Give a short, upbeat daily horoscope (2-3 sentences) for the "
                    f"{st.session_state.birth['sign']} sign, grounded in Vedic transit logic. "
-                   f"Mention one practical focus for today. Never claim certainty.")
+                   f"Mention one practical focus for today. Never claim certainty. "
+                   f"Write the entire reply in {LANGUAGES[st.session_state.language][1]}.")
             with st.spinner("Consulting the transits\u2026"):
                 st.session_state.horoscope = call_claude(sys, f"Reading for {st.session_state.birth['sign']}.")
         st.write(st.session_state.horoscope or "Tap reveal for your free daily reading.")
@@ -302,6 +378,21 @@ if st.session_state.profile_set:
 # ---------------- chat ----------------
 if st.session_state.profile_set:
     with st.container(border=True):
+        # Voice controls
+        v1, v2, v3 = st.columns([1.2, 1, 1.4])
+        st.session_state.language = v1.selectbox(
+            "Language", list(LANGUAGES.keys()),
+            index=list(LANGUAGES.keys()).index(st.session_state.language),
+            label_visibility="collapsed",
+        )
+        lang_code = LANGUAGES[st.session_state.language][0]
+        st.session_state.voice_on = v2.toggle("\U0001F50A Read aloud", value=st.session_state.voice_on)
+
+        # Voice input in the chosen language.
+        with v3.expander("\U0001F3A4 Speak"):
+            components.html(voice_input_html(lang_code), height=140)
+            st.caption("Speak, copy the captured text, and paste into the box below to send.")
+
         for role, text in st.session_state.messages:
             css = "usermsg" if role == "user" else "botmsg"
             st.markdown(f"<div class='{css}'>{text}</div>", unsafe_allow_html=True)
@@ -320,6 +411,13 @@ if st.session_state.profile_set:
                     answer = call_claude(reading_system(), q)
                 st.session_state.messages.append(("bot", answer))
                 st.rerun()
+
+        # Read the latest bot reply aloud (browser speech synthesis).
+        if st.session_state.voice_on and st.session_state.messages:
+            last_role, last_text = st.session_state.messages[-1]
+            if last_role == "bot":
+                safe = (last_text or "").replace("\\", " ").replace("`", " ").replace('"', " ").replace("\n", " ")
+                components.html(speak_html(safe, lang_code), height=0)
 
 st.markdown(
     "<p class='foot'>Guidance is based on Vedic/BNN principles and is for reflection, not certainty.</p>",
