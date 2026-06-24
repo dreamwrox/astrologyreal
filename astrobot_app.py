@@ -92,7 +92,7 @@ def detect_sign(d, t=None, place=None):
 # text into Python so we can auto-send it (no copy-paste). Used in the chat section.
 
 
-st.set_page_config(page_title="AstroBot", page_icon="\u2728", layout="centered")
+st.set_page_config(page_title="Vedic Astrologer", page_icon="\u2728", layout="centered")
 
 # ---------------- BNN knowledge base ----------------
 # Loads the BNN method reference so every reading follows the book's logic.
@@ -183,35 +183,73 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-ROBOT_SVG = """
+ASTROLOGER_SVG = """
 <div style="text-align:center;">
-<svg viewBox="0 0 160 150" width="120" height="115">
+<svg viewBox="0 0 200 200" width="150" height="150" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <radialGradient id="halo" cx="50%" cy="40%" r="60%">
-      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.9"/>
+    <radialGradient id="halo" cx="50%" cy="42%" r="55%">
+      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.85"/>
       <stop offset="100%" stop-color="#6D28D9" stop-opacity="0"/></radialGradient>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#EDE9FE"/><stop offset="100%" stop-color="#B9AEF0"/></linearGradient>
+    <linearGradient id="robe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/><stop offset="100%" stop-color="#4C1D95"/></linearGradient>
+    <radialGradient id="orb" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FDE68A"/><stop offset="60%" stop-color="#F5C518"/>
+      <stop offset="100%" stop-color="#B45309"/></radialGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#E8B98C"/><stop offset="100%" stop-color="#C98E5E"/></linearGradient>
   </defs>
-  <circle cx="80" cy="70" r="66" fill="url(#halo)">
-    <animate attributeName="r" values="60;70;60" dur="3s" repeatCount="indefinite"/></circle>
-  <line x1="80" y1="30" x2="80" y2="16" stroke="#F5C518" stroke-width="3"/>
-  <text x="80" y="16" text-anchor="middle" font-size="15" fill="#F5C518">&#10022;
-    <animateTransform attributeName="transform" type="rotate" from="0 80 12" to="360 80 12" dur="6s" repeatCount="indefinite"/></text>
-  <rect x="42" y="32" width="76" height="60" rx="18" fill="url(#body)" stroke="#6D28D9" stroke-width="2"/>
-  <rect x="50" y="44" width="60" height="34" rx="14" fill="#0B0A1F"/>
-  <circle cx="68" cy="61" r="5" fill="#F5C518">
-    <animate attributeName="r" values="5;1.5;5" dur="4s" repeatCount="indefinite"/></circle>
-  <circle cx="92" cy="61" r="5" fill="#F5C518">
-    <animate attributeName="r" values="5;1.5;5" dur="4s" repeatCount="indefinite"/></circle>
-  <rect x="72" y="70" width="16" height="3" rx="1.5" fill="#A78BFA"/>
-  <rect x="52" y="92" width="56" height="44" rx="14" fill="url(#body)" stroke="#6D28D9" stroke-width="2"/>
-  <circle cx="80" cy="112" r="8" fill="#161243"/>
-  <circle cx="80" cy="112" r="4" fill="#F5C518">
-    <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/></circle>
+
+  <!-- glowing halo -->
+  <circle cx="100" cy="92" r="86" fill="url(#halo)">
+    <animate attributeName="r" values="80;90;80" dur="4s" repeatCount="indefinite"/></circle>
+
+  <!-- rotating stars ring -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate" from="0 100 92" to="360 100 92" dur="22s" repeatCount="indefinite"/>
+    <text x="100" y="20" text-anchor="middle" font-size="11" fill="#F5C518">&#10022;</text>
+    <text x="178" y="96" text-anchor="middle" font-size="9" fill="#A78BFA">&#10022;</text>
+    <text x="100" y="172" text-anchor="middle" font-size="8" fill="#F5C518">&#10022;</text>
+    <text x="22" y="96" text-anchor="middle" font-size="10" fill="#A78BFA">&#10022;</text>
+  </g>
+
+  <!-- robe / body -->
+  <path d="M58 178 Q60 120 100 118 Q140 120 142 178 Z" fill="url(#robe)" stroke="#3B0764" stroke-width="2"/>
+  <!-- shawl trim -->
+  <path d="M84 122 L100 150 L116 122" fill="none" stroke="#F5C518" stroke-width="3" stroke-linejoin="round"/>
+  <!-- shoulders -->
+  <ellipse cx="100" cy="124" rx="40" ry="14" fill="url(#robe)"/>
+
+  <!-- neck -->
+  <rect x="92" y="104" width="16" height="16" rx="6" fill="url(#skin)"/>
+
+  <!-- head -->
+  <circle cx="100" cy="86" r="26" fill="url(#skin)" stroke="#9A6B3F" stroke-width="1.5"/>
+  <!-- hair / turban cloth -->
+  <path d="M74 80 Q72 54 100 52 Q128 54 126 80 Q120 64 100 62 Q80 64 74 80 Z" fill="#2E1065"/>
+  <!-- tilak -->
+  <path d="M100 64 L100 76 M95 70 Q100 66 105 70" stroke="#F5C518" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- eyes (gentle blink) -->
+  <circle cx="91" cy="86" r="2.6" fill="#2E1065">
+    <animate attributeName="ry" values="2.6;0.4;2.6" dur="5s" repeatCount="indefinite"/></circle>
+  <circle cx="109" cy="86" r="2.6" fill="#2E1065">
+    <animate attributeName="ry" values="2.6;0.4;2.6" dur="5s" repeatCount="indefinite"/></circle>
+  <!-- smile -->
+  <path d="M92 94 Q100 99 108 94" stroke="#7A4A28" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <!-- beard -->
+  <path d="M82 96 Q100 124 118 96 Q116 110 100 116 Q84 110 82 96 Z" fill="#E5E7EB" opacity="0.92"/>
+
+  <!-- arms cradling the orb -->
+  <path d="M66 150 Q80 138 92 150" fill="none" stroke="url(#robe)" stroke-width="12" stroke-linecap="round"/>
+  <path d="M134 150 Q120 138 108 150" fill="none" stroke="url(#robe)" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- glowing crystal orb -->
+  <circle cx="100" cy="158" r="15" fill="url(#orb)">
+    <animate attributeName="opacity" values="1;0.7;1" dur="2.4s" repeatCount="indefinite"/></circle>
+  <circle cx="95" cy="153" r="4" fill="#FFFDF5" opacity="0.8"/>
 </svg>
 </div>
 """
+
 
 # ---------------- claude ----------------
 def call_claude(system, user_text):
@@ -249,7 +287,7 @@ def reading_system():
             "birth details, and say it is indicative. Do not demand a full chart from the querent.\n"
         )
     return (
-        "You are AstroBot, an astrologer who predicts using the Bhrigu Nandi Nadi (BNN) "
+        "You are a Vedic Astrologer who predicts using the Bhrigu Nandi Nadi (BNN) "
         "method. Follow the BNN reference below exactly. Core method: Jupiter is the self; "
         "do NOT use Lagna or Dasha; planets come into combination via same-sign, trinal "
         "rashis (1-5-9, 2-6-10, 3-7-11, 4-8-12), next-house, or 7th-house (not for Rahu/Ketu); "
@@ -267,8 +305,8 @@ def reading_system():
     )
 
 # ---------------- header ----------------
-st.markdown(ROBOT_SVG, unsafe_allow_html=True)
-st.markdown("<h1 style='text-align:center;margin:0;'>AstroBot</h1>", unsafe_allow_html=True)
+st.markdown(ASTROLOGER_SVG, unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;margin:0;'>Vedic Astrologer</h1>", unsafe_allow_html=True)
 st.markdown(
     "<p style='text-align:center;color:#C7C3E8;margin-top:2px;'>BNN &amp; Vedic guidance \u00b7 your pocket sky-reader</p>",
     unsafe_allow_html=True,
@@ -285,7 +323,7 @@ if not st.session_state.unlocked:
     with st.container(border=True):
         st.subheader("Enter your coupon to begin")
         st.caption(
-            f"AstroBot is coupon-based. Redeem a code (min \u20B9{RECHARGE_MIN}) to unlock. "
+            f"This service is coupon-based. Redeem a code (min \u20B9{RECHARGE_MIN}) to unlock. "
             f"Each question then costs \u20B9{COST_PER_Q}."
         )
         g1, g2 = st.columns([3, 1])
@@ -379,7 +417,7 @@ if st.session_state.profile_set:
         hc1, hc2 = st.columns([3, 1])
         hc1.subheader(f"Today for {st.session_state.birth['sign']}")
         if hc2.button("Reveal (free)", use_container_width=True):
-            sys = (f"You are AstroBot. Give a short, upbeat daily horoscope (2-3 sentences) for the "
+            sys = (f"You are a Vedic astrologer. Give a short, upbeat daily horoscope (2-3 sentences) for the "
                    f"{st.session_state.birth['sign']} sign, grounded in Vedic transit logic. "
                    f"Mention one practical focus for today. Never claim certainty. "
                    f"Write the entire reply in {LANGUAGES[st.session_state.language][1]}.")
