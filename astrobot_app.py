@@ -16,6 +16,11 @@ import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 import anthropic
+try:
+    from streamlit_mic_recorder import speech_to_text
+    MIC_AVAILABLE = True
+except Exception:
+    MIC_AVAILABLE = False
 
 # ---------------- config ----------------
 COST_PER_Q = 10
@@ -77,64 +82,9 @@ def detect_sign(d, t=None, place=None):
     return w, "Western"
 
 
-# ---------------- voice assistant (browser Web Speech API) ----------------
-def speak_html(text, lang_code="en-IN"):
-    """Speak the given text aloud using the browser's speech synthesis in the chosen language."""
-    return f"""
-    <script>
-      (function() {{
-        try {{
-          const msg = new SpeechSynthesisUtterance("{text}");
-          msg.rate = 1.0; msg.pitch = 1.0; msg.lang = "{lang_code}";
-          // Prefer a voice matching the language if the browser has one.
-          const pick = () => {{
-            const vs = window.speechSynthesis.getVoices();
-            const m = vs.find(v => v.lang === "{lang_code}") || vs.find(v => v.lang && v.lang.slice(0,2) === "{lang_code}".slice(0,2));
-            if (m) msg.voice = m;
-            window.speechSynthesis.cancel();
-            window.speechSynthesis.speak(msg);
-          }};
-          if (window.speechSynthesis.getVoices().length) pick();
-          else window.speechSynthesis.onvoiceschanged = pick;
-        }} catch (e) {{}}
-      }})();
-    </script>
-    """
-
-# Microphone capture in the chosen language; shows recognized text to copy into chat.
-def voice_input_html(lang_code="en-IN"):
-    return """
-<div style="font-family: system-ui, sans-serif;">
-  <button id="mic" style="background:#6D28D9;color:#fff;border:none;border-radius:10px;
-    padding:10px 16px;font-weight:600;cursor:pointer;">\U0001F3A4 Start speaking</button>
-  <p id="out" style="color:#EDE9FE;margin-top:10px;min-height:20px;"></p>
-  <script>
-    (function(){
-      const LANG = "%LANG%";
-      const btn = document.getElementById('mic');
-      const out = document.getElementById('out');
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { out.textContent = "Voice input not supported in this browser. Try Chrome."; btn.disabled = true; return; }
-      const rec = new SR();
-      rec.lang = LANG; rec.interimResults = true; rec.continuous = false;
-      let finalText = "";
-      btn.onclick = function(){
-        finalText = ""; out.textContent = "Listening\\u2026";
-        try { rec.start(); } catch(e) {}
-      };
-      rec.onresult = function(e){
-        let interim = "";
-        for (let i = e.resultIndex; i < e.results.length; i++){
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) finalText += t; else interim += t;
-        }
-        out.textContent = (finalText + " " + interim).trim();
-      };
-      rec.onerror = function(){ out.textContent = "Didn't catch that \\u2014 try again."; };
-    })();
-  </script>
-</div>
-""".replace("%LANG%", lang_code)
+# ---------------- voice assistant (speech-to-text input) ----------------
+# Voice input uses the streamlit-mic-recorder component, which returns recognized
+# text into Python so we can auto-send it (no copy-paste). Used in the chat section.
 
 
 st.set_page_config(page_title="AstroBot", page_icon="\u2728", layout="centered")
@@ -174,7 +124,6 @@ def init_state():
         "birth": {"name": "", "date": None, "time": "", "place": "", "sign": "Aries"},
         "messages": [],
         "horoscope": "",
-        "voice_on": True,         # read bot answers aloud
         "language": "English",    # voice + reading language
     }
     for k, v in defaults.items():
@@ -197,6 +146,34 @@ st.markdown("""
   .usermsg { background:#6D28D9; border-radius:14px 14px 4px 14px;
              padding:12px 14px; margin:6px 0; text-align:right; }
   .foot { color:#C7C3E8; font-size:12px; text-align:center; opacity:.8; margin-top:24px; }
+
+  /* --- form fields: dark background, light text so values are readable --- */
+  /* text / number / date inputs */
+  .stTextInput input, .stDateInput input, .stNumberInput input {
+    background:#0B0A1F !important; color:#EDE9FE !important;
+    border:1px solid #6D28D9 !important; border-radius:10px !important;
+  }
+  .stTextInput input::placeholder, .stDateInput input::placeholder { color:#9690c4 !important; }
+
+  /* selectbox closed control */
+  div[data-baseweb="select"] > div {
+    background:#0B0A1F !important; color:#EDE9FE !important;
+    border:1px solid #6D28D9 !important; border-radius:10px !important;
+  }
+  div[data-baseweb="select"] * { color:#EDE9FE !important; }
+  div[data-baseweb="select"] svg { fill:#A78BFA !important; }
+
+  /* dropdown popup menu (selectbox options) */
+  ul[data-baseweb="menu"], div[data-baseweb="popover"] ul {
+    background:#1E1A4D !important;
+  }
+  ul[data-baseweb="menu"] li { background:#1E1A4D !important; color:#EDE9FE !important; }
+  ul[data-baseweb="menu"] li:hover { background:#6D28D9 !important; }
+
+  /* date picker calendar popup */
+  div[data-baseweb="calendar"] { background:#1E1A4D !important; color:#EDE9FE !important; }
+  div[data-baseweb="calendar"] button { color:#EDE9FE !important; }
+  div[data-baseweb="calendar"] [aria-selected="true"] { background:#6D28D9 !important; color:#fff !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -378,46 +355,48 @@ if st.session_state.profile_set:
 # ---------------- chat ----------------
 if st.session_state.profile_set:
     with st.container(border=True):
-        # Voice controls
-        v1, v2, v3 = st.columns([1.2, 1, 1.4])
-        st.session_state.language = v1.selectbox(
+        # Language selector (controls voice recognition + reply language)
+        c_lang, c_mic = st.columns([2, 1])
+        st.session_state.language = c_lang.selectbox(
             "Language", list(LANGUAGES.keys()),
             index=list(LANGUAGES.keys()).index(st.session_state.language),
             label_visibility="collapsed",
         )
         lang_code = LANGUAGES[st.session_state.language][0]
-        st.session_state.voice_on = v2.toggle("\U0001F50A Read aloud", value=st.session_state.voice_on)
 
-        # Voice input in the chosen language.
-        with v3.expander("\U0001F3A4 Speak"):
-            components.html(voice_input_html(lang_code), height=140)
-            st.caption("Speak, copy the captured text, and paste into the box below to send.")
+        # Voice input that auto-sends: speech_to_text returns the recognized text,
+        # which we feed straight into the same handler as a typed question.
+        spoken = None
+        with c_mic:
+            if MIC_AVAILABLE:
+                spoken = speech_to_text(
+                    language=lang_code, start_prompt="\U0001F3A4 Speak",
+                    stop_prompt="\u23F9 Stop", just_once=True, key="stt",
+                )
+            else:
+                st.caption("Voice needs streamlit-mic-recorder")
 
         for role, text in st.session_state.messages:
             css = "usermsg" if role == "user" else "botmsg"
             st.markdown(f"<div class='{css}'>{text}</div>", unsafe_allow_html=True)
 
-        q = st.chat_input(
+        typed = st.chat_input(
             f"Ask about career, love, timing\u2026 (\u20B9{COST_PER_Q})"
             if st.session_state.wallet >= COST_PER_Q else "Recharge to ask\u2026"
         )
-        if q:
+
+        # Both spoken and typed questions go through the same path.
+        question = (spoken or typed)
+        if question:
             if st.session_state.wallet < COST_PER_Q:
                 st.warning(f"Need \u20B9{COST_PER_Q}. Recharge above (min \u20B9{RECHARGE_MIN}).")
             else:
                 st.session_state.wallet -= COST_PER_Q
-                st.session_state.messages.append(("user", q))
+                st.session_state.messages.append(("user", question))
                 with st.spinner("Reading the stars\u2026"):
-                    answer = call_claude(reading_system(), q)
+                    answer = call_claude(reading_system(), question)
                 st.session_state.messages.append(("bot", answer))
                 st.rerun()
-
-        # Read the latest bot reply aloud (browser speech synthesis).
-        if st.session_state.voice_on and st.session_state.messages:
-            last_role, last_text = st.session_state.messages[-1]
-            if last_role == "bot":
-                safe = (last_text or "").replace("\\", " ").replace("`", " ").replace('"', " ").replace("\n", " ")
-                components.html(speak_html(safe, lang_code), height=0)
 
 st.markdown(
     "<p class='foot'>Guidance is based on Vedic/BNN principles and is for reflection, not certainty.</p>",
