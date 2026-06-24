@@ -21,6 +21,11 @@ try:
     MIC_AVAILABLE = True
 except Exception:
     MIC_AVAILABLE = False
+try:
+    import bnn_chart
+    CHART_AVAILABLE = True
+except Exception:
+    CHART_AVAILABLE = False
 
 # ---------------- config ----------------
 COST_PER_Q = 10
@@ -125,6 +130,7 @@ def init_state():
         "messages": [],
         "horoscope": "",
         "language": "English",    # voice + reading language
+        "chart": None,            # computed planetary rashi placements
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -225,6 +231,23 @@ def call_claude(system, user_text):
 
 def reading_system():
     b = st.session_state.birth
+    chart = st.session_state.get("chart")
+    if chart and CHART_AVAILABLE:
+        placements = bnn_chart.chart_summary(chart)
+        chart_block = (
+            f"The querent's computed planetary placements (sidereal/Lahiri) are:\n{placements}.\n"
+            "Use these directly to do the BNN reading. Do NOT ask the querent for their placements — "
+            "you already have them. Read the relevant combinations (Jupiter as self, plus the planets "
+            "relevant to the question) by joining karakas.\n"
+        )
+        if not chart.get("_time_known"):
+            chart_block += ("Birth time was not given, so Moon and fast points may be approximate; "
+                            "rely more on the slower planets and note this only if directly relevant.\n")
+    else:
+        chart_block = (
+            "Planetary placements could not be computed. Give an indicative reading from the sign and "
+            "birth details, and say it is indicative. Do not demand a full chart from the querent.\n"
+        )
     return (
         "You are AstroBot, an astrologer who predicts using the Bhrigu Nandi Nadi (BNN) "
         "method. Follow the BNN reference below exactly. Core method: Jupiter is the self; "
@@ -235,11 +258,10 @@ def reading_system():
         "=== BNN REFERENCE ===\n" + BNN_RULES + "\n=== END REFERENCE ===\n\n"
         f"Querent: name {b['name']}, date {b['date']}, time {b['time'] or 'unknown'}, "
         f"place {b['place'] or 'unknown'}, sign {b['sign']}.\n"
-        "If the querent has not provided their planetary placements (which rashi each planet "
-        "sits in), briefly ask for the key ones relevant to their question, OR give an "
-        "indicative reading based on what they've shared and say so. Keep answers to 4-6 warm "
-        "sentences. Never declare extreme events (divorce, serious illness) as certain — note "
-        "that one combination is not the whole chart. Frame everything as BNN guidance. "
+        + chart_block +
+        "Keep answers to 4-6 warm sentences. Never declare extreme events (divorce, serious "
+        "illness) as certain — note that one combination is not the whole chart. Frame everything "
+        "as BNN guidance. "
         f"IMPORTANT: Write your entire reply in {LANGUAGES[st.session_state.language][1]}. "
         "Use natural, conversational phrasing in that language."
     )
@@ -331,10 +353,23 @@ if not st.session_state.profile_set:
                 st.warning("Add at least your name and birth date.")
             else:
                 b["sign"] = detected or "Aries"
+                # Compute the full planetary chart so the bot never has to ask.
+                chart = None
+                if CHART_AVAILABLE:
+                    try:
+                        coords = bnn_chart.geocode_place(b["place"]) or (28.6139, 77.2090)
+                        chart = bnn_chart.compute_chart(b["date"], b["time"], coords[0], coords[1])
+                    except Exception:
+                        chart = None
+                st.session_state.chart = chart
                 st.session_state.profile_set = True
+                note = ""
+                if chart and not chart.get("_time_known"):
+                    note = " (Tip: add your birth time for a more precise chart.)"
                 st.session_state.messages = [
                     ("bot", f"Namaste {b['name']}. Your sign is {b['sign']}. "
-                            f"I've aligned to your chart. Each question draws \u20B9{COST_PER_Q}.")
+                            f"I've calculated your chart and can read it directly.{note} "
+                            f"Each question draws \u20B9{COST_PER_Q}.")
                 ]
                 st.rerun()
 
