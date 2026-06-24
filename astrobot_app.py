@@ -23,6 +23,49 @@ COUPONS = {"ASTRO100": 100, "STARS100": 100, "COSMIC200": 200}
 ZODIAC = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
           "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
 
+
+# ---------------- zodiac sign detection ----------------
+# Western (tropical) sun sign from birth DATE alone. Instant, no time/place needed.
+# (end_day, sign) — a date on/before end_day in that month belongs to the given sign.
+_WESTERN = [
+    (19, "Capricorn"), (18, "Aquarius"), (20, "Pisces"), (19, "Aries"),
+    (20, "Taurus"), (20, "Gemini"), (22, "Cancer"), (22, "Leo"),
+    (22, "Virgo"), (22, "Libra"), (21, "Scorpio"), (21, "Sagittarius"),
+]
+
+def western_sign(d):
+    """Return the Western sun sign for a datetime.date."""
+    if d is None:
+        return None
+    end_day, sign = _WESTERN[d.month - 1]
+    if d.day > end_day:
+        # rolls into the next sign; December rolls to Capricorn
+        return _WESTERN[d.month % 12][1]
+    return sign
+
+
+def vedic_rashi(d, t=None, place=None):
+    """
+    Proper Vedic (sidereal) rashi requires birth date, time, place and an astronomy
+    library to compute the Moon/Sun longitude minus ayanamsa. Not yet wired in.
+
+    UPGRADE: install a library and compute here, e.g.
+        pip install vedicastro   (or pyswisseph + a geocoder)
+    then return the sidereal sign. Until then we return None so the app falls back
+    to the Western sign and labels it accordingly.
+    """
+    return None
+
+
+def detect_sign(d, t=None, place=None):
+    """Use Vedic rashi if available, else Western. Returns (sign, system_label)."""
+    v = vedic_rashi(d, t, place)
+    if v:
+        return v, "Vedic"
+    w = western_sign(d)
+    return w, "Western"
+
+
 st.set_page_config(page_title="AstroBot", page_icon="\u2728", layout="centered")
 
 # ---------------- BNN knowledge base ----------------
@@ -55,6 +98,7 @@ def init_state():
     defaults = {
         "wallet": 0,
         "redeemed": set(),
+        "unlocked": False,        # app stays gated until a valid coupon is redeemed
         "profile_set": False,
         "birth": {"name": "", "date": None, "time": "", "place": "", "sign": "Aries"},
         "messages": [],
@@ -160,6 +204,36 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---------------- coupon gate ----------------
+# The app stays locked until the user redeems a valid coupon. Everything below
+# (birth details, horoscope, chat) only renders once unlocked.
+if not st.session_state.unlocked:
+    with st.container(border=True):
+        st.subheader("Enter your coupon to begin")
+        st.caption(
+            f"AstroBot is coupon-based. Redeem a code (min \u20B9{RECHARGE_MIN}) to unlock. "
+            f"Each question then costs \u20B9{COST_PER_Q}. Demo code: ASTRO100"
+        )
+        g1, g2 = st.columns([3, 1])
+        gate_code = g1.text_input(
+            "Coupon code", label_visibility="collapsed",
+            placeholder="Enter coupon code", key="gate_code",
+        )
+        if g2.button("Unlock", use_container_width=True, type="primary"):
+            c = gate_code.strip().upper()
+            if c in COUPONS:
+                st.session_state.wallet += COUPONS[c]
+                st.session_state.redeemed.add(c)
+                st.session_state.unlocked = True
+                st.rerun()
+            else:
+                st.error("That coupon isn't valid. Try ASTRO100.")
+    st.markdown(
+        "<p class='foot'>Guidance is based on Vedic/BNN principles and is for reflection, not certainty.</p>",
+        unsafe_allow_html=True,
+    )
+    st.stop()   # nothing below renders until unlocked
+
 # ---------------- recharge (coupon only) ----------------
 with st.container(border=True):
     st.subheader("Recharge wallet")
@@ -192,15 +266,23 @@ if not st.session_state.profile_set:
         )
         b["time"] = col1.text_input("Birth time (e.g. 14:30)", b["time"])
         b["place"] = col2.text_input("Birth place", b["place"])
-        b["sign"] = st.selectbox("Zodiac sign", ZODIAC, index=ZODIAC.index(b["sign"]))
+
+        # Auto-detect the sign from the birth date (live preview before saving).
+        detected, system_label = detect_sign(b["date"], b["time"], b["place"])
+        if detected:
+            st.info(f"\u2728 Your sign is **{detected}** ({system_label}).")
+        else:
+            st.caption("Pick your birth date and I'll detect your sign.")
+
         if st.button("Align my chart", type="primary", use_container_width=True):
             if not b["name"] or not b["date"]:
                 st.warning("Add at least your name and birth date.")
             else:
+                b["sign"] = detected or "Aries"
                 st.session_state.profile_set = True
                 st.session_state.messages = [
-                    ("bot", f"Namaste {b['name']}. I've aligned to your chart. "
-                            f"Each question draws \u20B9{COST_PER_Q}.")
+                    ("bot", f"Namaste {b['name']}. Your sign is {b['sign']}. "
+                            f"I've aligned to your chart. Each question draws \u20B9{COST_PER_Q}.")
                 ]
                 st.rerun()
 
