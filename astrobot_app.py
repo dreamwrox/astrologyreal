@@ -30,7 +30,15 @@ except Exception:
 # ---------------- config ----------------
 COST_PER_Q = 10
 RECHARGE_MIN = 100
-COUPONS = {"ASTRO100": 100, "STARS100": 100, "COSMIC200": 200}
+COUPONS = {
+    # Codes you send to a buyer after verifying their UPI payment screenshot.
+    # Tier ₹100:
+    "ASTRO100": 100, "STAR100": 100,
+    # Tier ₹200:
+    "ASTRO200": 200, "STAR200": 200,
+    # Tier ₹300:
+    "ASTRO300": 300, "STAR300": 300,
+}
 ZODIAC = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
           "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"]
 
@@ -319,17 +327,56 @@ st.markdown(
 # ---------------- coupon gate ----------------
 # The app stays locked until the user redeems a valid coupon. Everything below
 # (birth details, horoscope, chat) only renders once unlocked.
+WHATSAPP_NUMBER = "8800138095"
+PRICE_TIERS = [100, 200, 300]
+
 if not st.session_state.unlocked:
+    # --- Payment / recharge via GPay-UPI QR ---
     with st.container(border=True):
-        st.subheader("Enter your coupon to begin")
-        st.caption(
-            f"This service is coupon-based. Redeem a code (min \u20B9{RECHARGE_MIN}) to unlock. "
-            f"Each question then costs \u20B9{COST_PER_Q}."
+        st.subheader("Recharge to unlock")
+        st.caption("Pick an amount, scan the QR with any UPI app (GPay / PhonePe / Paytm), "
+                   "and pay that amount.")
+
+        cols = st.columns(len(PRICE_TIERS))
+        for i, amt in enumerate(PRICE_TIERS):
+            cols[i].markdown(
+                f"<div style='text-align:center;border:1px solid #6D28D9;border-radius:12px;"
+                f"padding:10px;background:#1E1A4D;'><b style='color:#F5C518;font-size:20px;'>"
+                f"\u20B9{amt}</b><br><span style='color:#C7C3E8;font-size:12px;'>\u20B9{amt} credit</span></div>",
+                unsafe_allow_html=True,
+            )
+
+        # Show the GPay QR image if present.
+        qr_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gpay_qr.png")
+        if os.path.exists(qr_path):
+            qcol = st.columns([1, 2, 1])
+            with qcol[1]:
+                st.image(qr_path, caption="Scan with any UPI app to pay", use_container_width=True)
+        else:
+            st.info("Add your GPay QR image as 'gpay_qr.png' next to the app to show it here.")
+
+        st.markdown(
+            f"<p style='text-align:center;color:#EDE9FE;'>After paying, send your payment "
+            f"screenshot on WhatsApp to <b style='color:#F5C518;'>{WHATSAPP_NUMBER}</b> "
+            f"to receive your <b>unlock code</b>.</p>",
+            unsafe_allow_html=True,
         )
+        wa_link = f"https://wa.me/91{WHATSAPP_NUMBER}?text=Hi,%20I%20paid%20for%20a%20reading.%20Here%20is%20my%20screenshot."
+        st.markdown(
+            f"<div style='text-align:center;'><a href='{wa_link}' target='_blank' "
+            f"style='background:#25D366;color:#fff;padding:10px 20px;border-radius:10px;"
+            f"text-decoration:none;font-weight:600;'>\U0001F4AC Send screenshot on WhatsApp</a></div>",
+            unsafe_allow_html=True,
+        )
+
+    # --- Coupon entry (the code you send after verifying payment) ---
+    with st.container(border=True):
+        st.subheader("Enter your unlock code")
+        st.caption("Once you receive your code on WhatsApp, enter it here to begin.")
         g1, g2 = st.columns([3, 1])
         gate_code = g1.text_input(
             "Coupon code", label_visibility="collapsed",
-            placeholder="Enter coupon code", key="gate_code",
+            placeholder="Enter your code", key="gate_code",
         )
         if g2.button("Unlock", use_container_width=True, type="primary"):
             c = gate_code.strip().upper()
@@ -339,7 +386,7 @@ if not st.session_state.unlocked:
                 st.session_state.unlocked = True
                 st.rerun()
             else:
-                st.error("That coupon code isn't valid.")
+                st.error("That code isn't valid.")
     st.markdown(
         "<p class='foot'>Guidance is based on Vedic/BNN principles and is for reflection, not certainty.</p>",
         unsafe_allow_html=True,
